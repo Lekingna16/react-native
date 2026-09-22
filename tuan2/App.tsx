@@ -1,9 +1,10 @@
-import { View, Text, SafeAreaView, Pressable, Alert } from 'react-native'
-import { useState } from 'react'
+import { View, Text, SafeAreaView, Pressable, Alert, StatusBar, Platform, Button, ActivityIndicator } from 'react-native'
+import { useMemo, useState } from 'react'
 import { FlatList, StyleSheet } from 'react-native'
 import { Course, courses } from './src/data/courses'
 import { TextInput } from 'react-native'
 import { Dropdown } from 'react-native-element-dropdown'
+
 
 const App = () => {
   return (
@@ -15,117 +16,188 @@ const App = () => {
 
 export default App
 
+// hien thi du lieu bang FlatList 
 function CourseListScreen() {
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState("All")
+  const [sort, setSort] = useState('Default')
 
-  const openCourse = (course: Course) => {
-    Alert.alert(
-      course.title,
-      `Giang vien: ${course.instructor} \nSo sinh vien: ${course.students}`
+  const [refresing, setRefshing] = useState(false)
+  const PAGE_SIZE = 5;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  const onRefresh = () => {
+    setRefshing(true)
+
+    setTimeout(() => {
+      setQuery("")
+      setSelected("All")
+      setVisibleCount(PAGE_SIZE)
+      setRefshing(false)
+    }, 2000)
+  }
+
+
+
+
+  const normalizeQuery = query.trim().toLocaleLowerCase('vi')
+
+  const dropdownData = useMemo(() => {
+    const uniqueCategories = Array.from(new Set(courses.map(item => item.category)))
+    const formatted = uniqueCategories.map(cat => ({ label: cat, value: cat }))
+    return [{ label: 'Tat ca danh muc', value: 'All' }, ...formatted]
+  }, [])
+
+  const filterSearch = useMemo(() => {
+    return courses.filter((item) => {
+      const matchesSearch = `${item.category} ${item.instructor} ${item.title}`
+        .toLocaleLowerCase('vi')
+        .includes(normalizeQuery)
+
+      const matchesDropdown = selected === 'All' || item.category === selected;
+      return matchesSearch && matchesDropdown
+    })
+  }, [query, selected])
+
+  const sortValue = [{ label: 'Tang dan', value: 'Tang dan' }, { label: 'Giam dan', value: 'Giam dan' }]
+
+
+  const sortData = useMemo(() => {
+    if (sort === 'Default') return filterSearch
+    return [...filterSearch].sort((a, b) => {
+      if (sort === 'Tang dan') return a.students - b.students
+      return b.students - a.students
+    })
+  }, [filterSearch, sort])
+
+  const displayedData = sortData.slice(0, visibleCount)
+  const handleLoadMore = () => {
+    if (loadingMore || visibleCount >= sortData.length) return
+    setLoadingMore(true)
+
+    setTimeout(() => {
+      setVisibleCount(preCount => preCount + PAGE_SIZE)
+      setLoadingMore(false)
+    }, 1000)
+  }
+  const renderFooter = () => {
+    if (!loadingMore) return null
+    return (
+      <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+        <ActivityIndicator size="small" color="#3157a4" />
+      </View>
     )
   }
-  const [query, setQuery] = useState('')
-  const [value, setValue] = useState<string | null>(null)
-  const categories = Array.from(new Set(courses.map((item) => item.category))).map(
-    (cate) => ({ label: cate, value: cate })
-  )
-  const normalizedQuery = query.trim().toLocaleLowerCase('vi')
-  const filteredCourses = courses.filter((course) => {
-    const matchesQuery = `${course.title} ${course.instructor} ${course.category}`
-      .toLocaleLowerCase('vi')
-      .includes(normalizedQuery)
-    const matchesCategory = value ? course.category == value : true
-    return matchesQuery && matchesCategory
-  }
-  )
-
 
 
   return (
-    <View>
-      <FlatList
-        data={filteredCourses} // du lieu dau vao
-        keyExtractor={(item) => item.id} // phai co id
-        renderItem={({ item }) => (
-          <CourseRow course={item} onPress={openCourse} />  // danh sach phai co kieu render cho tung item
-        )}
 
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <Text style={styles.screenTitle}>Course Catalog</Text>
-            <Text style={styles.subtitle}>
-              Khám phá các khóa học đang mở
-            </Text>
-
-            <View
-              style={styles.searchContainer}>
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Tìm theo tên, giảng viên hoặc danh mục"
-                placeholderTextColor="#8A8F98"
-                returnKeyType="search"
-                style={styles.searchInputInside}
-              />
-              {query.length > 0 && <Pressable style={styles.clearButton}>
-                <Text style={styles.clearButtonText}>✕</Text>
-              </Pressable>}
-
-            </View>
+    <FlatList
+      data={displayedData}
+      keyExtractor={(item) => item.id}
+      renderItem={({ item }) =>
+        <CourseRow course={item} onPress={() => openCourse(item)} />
+      }
+      onEndReached={handleLoadMore}
+      onEndReachedThreshold={0.5}
+      ListFooterComponent={renderFooter}
+      refreshing={refresing}
+      onRefresh={onRefresh}
+      ListHeaderComponent={
+        <View style={styles.header}>
+          <Text style={styles.screenTitle}>Course Catalog</Text>
+          <Text style={styles.subtitle}>Kham pha cac khoa hoc dang mo</Text>
+          <View style={{ flexDirection: 'row' }}>
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder='Tim kiem ten, giang vien hoac danh muc'
+              returnKeyType='search'
+              style={styles.searchInput}
+            />
+            <Pressable style={{ backgroundColor: 'red', padding: 10, borderRadius: 20, margin: 10 }}
+              onPress={() => query && setQuery('')}
+            >
+              <Text style={{ color: 'white' }}>Delete</Text>
+            </Pressable>
+          </View>
+          <View>
             <Dropdown
               style={styles.dropdown}
               placeholderStyle={styles.placeholderStyle}
               selectedTextStyle={styles.selectedTextStyle}
-              data={categories}
+              inputSearchStyle={styles.searchInputInside}
+              data={dropdownData}
+              search
               maxHeight={300}
               labelField="label"
               valueField="value"
-              placeholder='--chon khoa hoc--'
-              value={value}
-              onChange={item => { setValue(item.value) }}
+              placeholder='Chon danh muc'
+              searchPlaceholder='Tim danh muc'
+              value={selected}
+              onChange={(item) => setSelected(item.value)}
             />
-
-            <Text style={styles.resultText}>
-              Tìm thấy {filteredCourses.length} khóa học
-            </Text>
+            <Dropdown
+              style={styles.dropdown}
+              placeholderStyle={styles.placeholderStyle}
+              selectedTextStyle={styles.selectedTextStyle}
+              inputSearchStyle={styles.searchInputInside}
+              data={sortValue}
+              search
+              maxHeight={300}
+              labelField="label"
+              valueField="value"
+              placeholder='Chon kieu loc'
+              searchPlaceholder='Tim danh muc'
+              value={sort}
+              onChange={(item) => setSort(item.value)}
+            />
           </View>
-        }
+          <Text style={styles.resultText}>Tim thay {filterSearch.length} khoa hoc</Text>
+        </View>
+      }
+      ListEmptyComponent={
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>Khong tim thay khoa hoc</Text>
+          <Text style={styles.emptyText}>Hay thu tim kiem bang mot tu khoa khac</Text>
+        </View>
+      }
+      ItemSeparatorComponent={() => (
+        <View style={styles.separator}></View>
+      )}
+      keyboardShouldPersistTaps='handled'
 
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>Khong tim thay khoa hoc nao</Text>
-            <Text style={styles.emptyText}>Hay thu tim kiem bang mot tu khoa khac</Text>
-          </View>
-        }
-        ItemSeparatorComponent={
-          <View style={styles.separator} />
-        }
-      />
-    </View>
-
+    />
   )
 }
 
-interface CourseRowProps {
+// tinh component card row 
+interface CourseRowProp {
   course: Course,
   onPress: (course: Course) => void
 }
 
-function CourseRow({ course, onPress }: CourseRowProps) {
+function CourseRow({ course, onPress }: CourseRowProp) {
   return (
     <Pressable
       onPress={() => onPress(course)}
-      style={({ pressed }) => [styles.courseCard, pressed && styles.courseCardPressed]}
+      style={(press) => [styles.courseCard, press && styles.courseCardPressed]}
     >
       <Text style={styles.courseTitle}>{course.title}</Text>
-      <Text style={styles.instructor}>Giang vien: {course.instructor}</Text>
+      <Text style={styles.instructor}>Instructor: {course.instructor}</Text>
       <View style={styles.courseFooter}>
         <Text style={styles.category}>{course.category}</Text>
-        <Text style={styles.studentCount}>{course.students}</Text>
+        <Text style={styles.studentCount}>{course.students} students</Text>
       </View>
+
     </Pressable>
   )
 }
 
+const openCourse = (course: Course) => {
+  Alert.alert(course.title, `Giang vien: ${course.instructor} \n Student number: ${course.students}`)
+}
 
 
 
@@ -133,6 +205,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F4F6FA',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+    padding: 10
   },
   listContent: {
     flexGrow: 1,
@@ -161,6 +235,7 @@ const styles = StyleSheet.create({
     borderColor: '#DDE1E8',
     borderRadius: 14,
     paddingHorizontal: 16,
+    flex: 1
   },
   resultText: {
     color: '#4E5665',
@@ -265,4 +340,10 @@ const styles = StyleSheet.create({
   },
   placeholderStyle: { fontSize: 16, color: '#8A8F98' },
   selectedTextStyle: { fontSize: 16, color: '#1A1D1E' },
+  columnWrapper: {
+    gap: 16,
+    paddingHorizontal: 16,
+    marginBottom: 12, // Thay thế cho ItemSeparatorComponent (vì separator không chạy ngang trong numColumns)
+  },
+
 });
